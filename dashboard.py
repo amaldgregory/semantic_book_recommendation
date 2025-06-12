@@ -1,3 +1,4 @@
+import os
 import pandas as pd
 import numpy as np
 from dotenv import load_dotenv
@@ -5,9 +6,11 @@ from dotenv import load_dotenv
 from langchain_community.document_loaders import TextLoader
 from langchain_huggingface import HuggingFaceEmbeddings
 from langchain_text_splitters import CharacterTextSplitter
-from langchain_chroma import Chroma
+from langchain_community.vectorstores import Chroma
 
 import gradio as gr
+
+CHROMA_DIR = "chroma_db"
 
 
 load_dotenv()
@@ -19,10 +22,20 @@ books["large_thumbnail"] = np.where(
     books["large_thumbnail"].isna(),"default_cover.jpg",books["large_thumbnail"],
 )
 
-raw_documents = TextLoader("tagged_description.txt", encoding="utf8").load()
-text_splitter = CharacterTextSplitter(separator="\n", chunk_size=0, chunk_overlap=0)
-documents = text_splitter.split_documents(raw_documents)
-db_books = Chroma.from_documents(documents, HuggingFaceEmbeddings())
+
+if os.path.exists(CHROMA_DIR):
+    db_books = Chroma(
+        persist_directory=CHROMA_DIR,
+        embedding_function=HuggingFaceEmbeddings()
+    )
+else:
+    raw_documents = TextLoader("tagged_description.txt", encoding="utf8").load()
+    text_splitter = CharacterTextSplitter(separator="\n", chunk_size=0, chunk_overlap=0)
+    documents = text_splitter.split_documents(raw_documents)
+    db_books = Chroma.from_documents(
+        documents, HuggingFaceEmbeddings(), persist_directory=CHROMA_DIR
+    )
+    db_books.persist()
 
 
 def retrieve_semantic_recommendations(
@@ -84,7 +97,27 @@ categories = ["All"] + sorted(books["simple_categories"].unique())
 tones = ["All"] + ["Happy", "Surprising", "Angry", "Suspenseful", "Sad"]
 
 with gr.Blocks(theme = gr.themes.Ocean()) as dashboard:
-    gr.Markdown("# Semantic book recommender")
+    gr.Markdown(
+    """
+    <h1 style="font-size: 2.5em; font-weight: 700; margin-bottom: 0.3em;">
+        Semantic Book Recommender
+    </h1>
+
+    <p style="font-size: 1.1em; line-height: 1.6; max-width: 800px;">
+        <strong>Semantic Book Recommender</strong> is an AI-powered application designed to help readers discover books tailored to their unique interests and emotional preferences. It is built using text classification, sentiment analysis and HuggingFace models and embeddings.
+    </p>
+
+    <hr style="margin: 1.5em 0;">
+
+    <p style="font-size: 1em; color: #555;">
+        Built by <strong>Amal Gregory</strong>  
+        <br>
+        <a href="https://www.linkedin.com/in/amal-gregory/" target="_blank" style="margin-right: 15px;">LinkedIn</a>
+        <a href="https://github.com/amaldgregory" target="_blank">GitHub</a>
+    </p>
+    """,
+    elem_id="intro"
+    )
 
     with gr.Row():
         user_query = gr.Textbox(label = "Please enter a description of a book: ",
@@ -94,7 +127,7 @@ with gr.Blocks(theme = gr.themes.Ocean()) as dashboard:
         submit_button = gr.Button("Find recommendations")
 
     gr.Markdown("## Recommendations")
-    output = gr.Gallery(label = "Recommended books", columns = 8, rows = 2)
+    output = gr.Gallery(label = "Recommended books", columns = 4, rows = 4)
 
     submit_button.click(fn = recommend_books,
                         inputs = [user_query, category_dropdown, tone_dropdown],
